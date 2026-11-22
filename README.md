@@ -25,6 +25,14 @@ Hermes >= 0.22 (see `requires_hermes` in `plugin.yaml`).
 3. Restart the gateway.
 4. In Capabilities -> Plugins, enable **Progress Tracker**, then run "Reload desktop plugins".
 
+## Install by asking Hermes
+
+Paste this into Hermes:
+
+```text
+Install the Hermes Progress Tracker plugin from https://github.com/mariogoncalves2903-debug/hermes-progress-tracker: clone it into $HERMES_HOME/plugins/progress-tracker, run `hermes plugins enable progress-tracker`, restart the gateway, then enable Progress Tracker in Capabilities -> Plugins and reload desktop plugins.
+```
+
 ## Tool
 
 The agent drives the bar through the `progress_tracker` tool:

@@ -1,5 +1,7 @@
 # Hermes Progress Tracker
 
+> Hermes fork/port of [mjoyshuvo/claude-progress-tracker](https://github.com/mjoyshuvo/claude-progress-tracker) — originally a Claude Code hooks plugin, adapted to run on Hermes Agent.
+
 A [Hermes Agent](https://hermes-agent.nousresearch.com/) desktop plugin that shows real progress bars for agent work: goal-level tasks, permission/question blocks, findings, token/context usage, and work-vs-wait timing.
 
 ## Features

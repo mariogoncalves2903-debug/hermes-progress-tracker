@@ -1,0 +1,55 @@
+name: progress-tracker
+version: 0.1.0
+manifest_version: 1
+requires_hermes: ">=0.22"
+kind: standalone
+description: "Tracks progress bars with tasks, blocks, and findings across agent sessions"
+author: ""
+license: ""
+homepage: ""
+update_url: ""
+provides_tools:
+  - progress_tracker
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call
+  - pre_llm_call
+  - post_llm_call
+  - post_api_request
+  - on_session_start
+  - on_session_end
+  - on_session_reset
+  - on_session_finalize
+  - agent_loop_stopped
+  - subagent_start
+  - subagent_stop
+  - pre_approval_request
+  - post_approval_response
+  - on_human_input_request
+  - on_human_input_resolved
+  - pre_verify
+  - pre_command
+config_schema:
+  enabled_tools:
+    type: array
+    items:
+      type: string
+    default: []
+    description: "Tool names to track; empty = all"
+  enabled_findings:
+    type: array
+    items:
+      type: string
+    default: ["found", "failed"]
+    description: "Finding kinds to log"
+  max_findings:
+    type: integer
+    minimum: 1
+    default: 200
+    description: "Cap for blocks+findings timeline"
+  max_turns_retained:
+    type: integer
+    minimum: 1
+    default: 250
+    description: "Cap for turn history (endBlock/trimTimeline on eviction)"
+data_namespace: progress-tracker

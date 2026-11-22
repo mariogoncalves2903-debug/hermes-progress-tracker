@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Progress Tracker</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--ui-surface-background, #17171a); color: var(--ui-text-primary, #e6e6e9); padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin-bottom: 20px; }
+    .tracks { display: grid; gap: 16px; }
+    .track { background: var(--ui-surface-secondary, #1c1c1e); border: 1px solid var(--ui-stroke-secondary, #2a2a2e); border-radius: 8px; padding: 16px; }
+    .track-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .track-title { font-weight: 600; font-size: 1.1rem; }
+    .track-status { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+    .track-status.running { background: #aa9df6; color: #17171a; }
+    .track-status.failed { background: #ef6f5c; color: white; }
+    .track-status.completed { background: #8fd19e; color: #17171a; }
+    .track-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; font-size: 0.9rem; color: var(--ui-text-secondary, #a0a0a4); }
+    .track-meta span { background: rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; }
+    .tasks { display: flex; flex-direction: column; gap: 8px; }
+    .task { display: flex; align-items: center; gap: 12px; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 4px; }
+    .task-state { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+    .task-state.done { background: #8fd19e; }
+    .task-state.pending { background: #f0b34a; }
+    .task-state.failed { background: #ef6f5c; }
+    .task-state.active { background: #aa9df6; }
+    .task-state.skipped { background: #6b7280; }
+    .task-label { flex: 1; font-size: 0.9rem; }
+    .task-duration { font-size: 0.8rem; color: var(--ui-text-secondary, #a0a0a4); }
+    .error { color: #ef6f5c; padding: 16px; background: rgba(239,111,92,0.1); border-radius: 8px; margin-top: 16px; }
+    .loading { text-align: center; padding: 40px; color: var(--ui-text-secondary, #a0a0a4); }
+    .empty { text-align: center; padding: 40px; color: var(--ui-text-secondary, #a0a0a4); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Progress Tracker</h1>
+    <div id="loading" class="loading">Loading...</div>
+    <div id="error" class="error" style="display: none;"></div>
+    <div id="tracks" class="tracks" style="display: none;"></div>
+    <div id="empty" class="empty" style="display: none;">No active progress tracks</div>
+  </div>
+  <script>
+    async function loadTracks() {
+      try {
+        const response = await fetch('/api/plugins/progress-tracker/snapshot?all=1', {
+          credentials: 'include'
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        renderTracks(data.tracks || []);
+      } catch (err) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('error').textContent = `Failed to load tracks: ${err.message}`;
+      }
+    }
+
+    function formatDuration(ms) {
+      if (!ms || !isFinite(ms)) return '—';
+      const s = Math.round(ms / 1000);
+      if (s < 60) return `${s}s`;
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      if (m < 60) return `${m}m ${r.toString().padStart(2, '0')}s`;
+      const h = Math.floor(m / 60);
+      return `${h}h ${(m % 60).toString().padStart(2, '0')}m`;
+    }
+
+    function getTaskState(task, track) {
+      if (task.status === 'completed') return task.isSkipped ? 'skipped' : 'done';
+      if (task.status === 'in_progress') {
+        if (track?.failedCommand) return 'failed';
+        return 'active';
+      }
+      return 'pending';
+    }
+
+    function renderTracks(tracks) {
+      document.getElementById('loading').style.display = 'none';
+      const container = document.getElementById('tracks');
+      if (tracks.length === 0) {
+        document.getElementById('empty').style.display = 'block';
+        return;
+      }
+      container.style.display = 'grid';
+      container.innerHTML = tracks.map(track => {
+        const tasksHtml = (track.tasks || []).map(task => {
+          const state = getTaskState(task, track);
+          const started = task.startedAt ? new Date(task.startedAt).toLocaleTimeString() : '—';
+          const done = task.doneAt ? new Date(task.doneAt).toLocaleTimeString() : '—';
+          return `
+            <div class="task">
+              <div class="task-state ${state}"></div>
+              <div class="task-label">${task.label}</div>
+              <div class="task-duration">${started} → ${done}</div>
+            </div>
+          `;
+        }).join('');
+
+        return `
+          <div class="track">
+            <div class="track-header">
+              <div class="track-title">${track.title || track.label || 'Untitled'}</div>
+              <span class="track-status ${track.status || 'running'}">${track.status || 'running'}</span>
+            </div>
+            <div class="track-meta">
+              <span>Session: ${track.sessionId?.slice(0, 20)}...</span>
+              <span>Elapsed: ${formatDuration(track.elapsedMs)}</span>
+              <span>Tasks: ${track.tasks?.filter(t => t.status === 'completed').length || 0}/${track.tasks?.length || 0}</span>
+              <span>Tokens: ${track.tokens?.input || 0} in / ${track.tokens?.output || 0} out</span>
+            </div>
+            <div class="tasks">${tasksHtml}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Initial load
+    loadTracks();
+
+    // Poll every 2 seconds
+    setInterval(loadTracks, 2000);
+  </script>
+</body>
+</html>

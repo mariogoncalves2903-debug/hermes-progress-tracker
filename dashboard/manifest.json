@@ -1,0 +1,12 @@
+{
+  "name": "progress-tracker",
+  "label": "Progress Tracker",
+  "description": "Tracks progress bars with tasks, blocks, and findings across agent sessions",
+  "icon": "BarChart3",
+  "version": "0.1.0",
+  "api": "plugin_api.py",
+  "tab": {
+    "path": "/progress-tracker",
+    "position": "after:skills"
+  }
+}

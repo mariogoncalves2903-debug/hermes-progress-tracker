@@ -421,6 +421,7 @@ class TestMultistepEnforcement(_StoreCase):
         self._make_track("Old task", completed=True)
         on_post_tool_call(tool_name="progress_tracker", status="ok", session_id="s1")
         self.assertFalse(self._doc()["sessions"]["s1"]["projectHint"])
+        self.assertIsNone(on_pre_tool_call(tool_name="terminal", args={}, session_id="s1"))
 
     def test_short_request_not_blocked(self) -> None:
         on_pre_llm_call(session_id="s1", turn_id="t1", user_message="what time is it?")

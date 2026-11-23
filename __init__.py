@@ -139,7 +139,9 @@ def _enforcement_directive(tool_name: str, session_id: str) -> Optional[Dict[str
     if _has_active_track(doc, session_id):
         return None
     session = doc.get("sessions", {}).get(session_id) or {}
-    if not session.get("projectHint") and not _looks_like_multistep(session.get("lastUserMessage")):
+    # Intent flag is authoritative: on_pre_llm_call recomputes it per user request and a
+    # successful progress_tracker call clears it, so stale stored text cannot block forever.
+    if not session.get("projectHint"):
         return None
     return {"action": "block", "message": _BLOCK_MESSAGE}
 

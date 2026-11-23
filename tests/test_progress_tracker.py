@@ -416,6 +416,12 @@ class TestMultistepEnforcement(_StoreCase):
         result = on_pre_tool_call(tool_name="write_file", args={}, session_id="s1")
         self.assertEqual((result or {}).get("action"), "block")
 
+    def test_successful_planning_call_clears_hint_even_when_completed(self) -> None:
+        self._seed_project_intent()
+        self._make_track("Old task", completed=True)
+        on_post_tool_call(tool_name="progress_tracker", status="ok", session_id="s1")
+        self.assertFalse(self._doc()["sessions"]["s1"]["projectHint"])
+
     def test_short_request_not_blocked(self) -> None:
         on_pre_llm_call(session_id="s1", turn_id="t1", user_message="what time is it?")
         self.assertIsNone(on_pre_tool_call(tool_name="terminal", args={}, session_id="s1"))

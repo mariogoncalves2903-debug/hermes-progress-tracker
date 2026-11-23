@@ -257,12 +257,12 @@ def on_post_tool_call(**kwargs):
     doc = store.get_document()
     track = store.session_track(doc, session_id)
 
-    # A successful planning call satisfies enforcement until the next task replaces the bar.
+    # A successful planning call satisfies enforcement for the request that raised it,
+    # including a bar that just reached completed — otherwise a later quick check in the
+    # same session stays blocked forever.
     if tool_name == "progress_tracker" and status == "ok":
         session = store.ensure_session(doc, session_id)
-        if any(t.get("sessionId") == session_id and t.get("statusKey") != "completed"
-               for t in doc.get("tracks", [])):
-            session["projectHint"] = False
+        session["projectHint"] = False
 
     # A failed step fails the list. Permission denials are blocked, not failed.
     # Bash stays upstream-strict (only isCheck commands fail): a nonzero grep/diff/test is

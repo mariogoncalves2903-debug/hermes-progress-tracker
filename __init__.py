@@ -272,7 +272,8 @@ def on_session_start(**kwargs):
 
 @_hook
 def on_session_end(**kwargs):
-    """End turn, close blocks, dismiss this session's bar — SPEC 2.11."""
+    """End turn, close blocks, dismiss this session's unfinished bar — SPEC 2.11.
+    Completed bars stay visible until the next task replaces them."""
     session_id = _sid(kwargs)
     doc = store.get_document()
     store.end_turn(doc, session_id)
@@ -291,7 +292,8 @@ def on_session_reset(**kwargs):
 
 @_hook
 def on_session_finalize(**kwargs):
-    """Close blocks and dismiss the session's bar — SPEC 2.12."""
+    """Close blocks and dismiss the session's unfinished bar — SPEC 2.12.
+    Completed bars stay visible until the next task replaces them."""
     session_id = _sid(kwargs)
     doc = store.get_document()
     store.end_block(doc)

@@ -15,7 +15,7 @@ A [Hermes Agent](https://hermes-agent.nousresearch.com/) desktop plugin that sho
 - Findings log with capped history.
 - Token/context tiles from model calls.
 - Work vs waited-on-you timing. Wait only counts open permission/question blocks — tool calls are work, not waiting.
-- Session-scoped: each conversation has its own bar; session end dismisses only that session's bar.
+- Session-scoped: each conversation has its own bar; when a session ends only its unfinished bar is dismissed — a completed bar stays visible until the next task replaces it.
 - Desktop pane plus an above-the-composer band.
 
 ## Requirements
@@ -84,5 +84,5 @@ MIT — see [LICENSE](LICENSE).
 | **Waiting (approval)** — blocked on plan approval | ![waiting-approval](assets/states/waiting-approval.gif) |
 | **Failed** — a step hit an error, findings logged | ![failed](assets/states/failed.gif) |
 | **Skipped** — a step was skipped, work continues | ![skipped](assets/states/skipped.gif) |
-| **Done** — all steps complete, bar fades out | ![done](assets/states/done.gif) |
+| **Done** — all steps complete; stays visible until the next task | ![done](assets/states/done.gif) |
 | **Log view** — permission blocks, answered items, findings | ![log](assets/states/log.gif) |

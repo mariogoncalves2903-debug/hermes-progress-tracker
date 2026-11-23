@@ -1022,14 +1022,15 @@ def ensure_session(doc: Dict[str, Any], session_id: str) -> Dict[str, Any]:
 
 
 def close_session_tracks(doc: Dict[str, Any], session_id: Optional[str]) -> int:
-    """Session ended: dismiss its bars so a finished session stops reading as "running".
+    """Session ended: dismiss its unfinished bars; keep completed ones as history.
 
-    Without this the band kept showing the last session's unfinished track forever.
+    A finished session stops reading as "running", but a completed bar stays visible
+    until the user starts another task (a new title/tasks payload replaces it).
     """
     now = _now_ms()
     closed = 0
     for t in doc["tracks"]:
-        if t.get("sessionId") == session_id and not t.get("isDismissed"):
+        if t.get("sessionId") == session_id and not t.get("isDismissed") and not _is_complete(t):
             t["isDismissed"] = True
             t["updatedAt"] = now
             closed += 1
@@ -1313,15 +1314,15 @@ def stepNameOf(tool_name: str, args: Dict[str, Any]) -> str:
 
 
 def prune_stale_tracks(doc: Dict[str, Any]) -> None:
-    """Drop any track untouched for STALE_MS — dismissed and completed ones included.
+    """Drop stale tracks, but keep completed ones so the last result stays on screen.
 
-    Retaining dismissed/complete tracks forever grew the store without bound, and the band
-    only ever needs a track that changed recently.
+    Completed bars are the user's "done" state and remain until a new task replaces
+    them; only stale unfinished/dismissed bars are pruned.
     """
     cutoff = _now_ms() - STALE_MS
     doc["tracks"] = [
         t for t in doc["tracks"]
-        if (t.get("updatedAt") or t.get("createdAt") or 0) > cutoff
+        if _is_complete(t) or (t.get("updatedAt") or t.get("createdAt") or 0) > cutoff
     ]
 
 

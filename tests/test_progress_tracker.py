@@ -380,23 +380,40 @@ class TestHookWrappers(_StoreCase):
 
 
 class TestSessionCloseAndPrune(_StoreCase):
-    def test_session_end_dismisses_only_that_sessions_bar(self) -> None:
-        """A finished session must stop reading as running; other sessions keep their bar."""
+    def test_session_end_keeps_completed_and_dismisses_unfinished(self) -> None:
+        """A completed bar stays visible until the next task; unfinished ones stop reading as running."""
         doc = self._doc()
-        doc["tracks"] = [
-            store.new_track("A", ["a1", "a2"], session_id="s1"),
-            store.new_track("B", ["b1", "b2"], session_id="s2"),
-        ]
+        unfinished = store.new_track("A", ["a1", "a2"], session_id="s1")
+        complete = store.new_track("A done", ["a1", "a2"], session_id="s1")
+        for task in complete["tasks"]:
+            task["state"] = "completed"
+        other = store.new_track("B", ["b1", "b2"], session_id="s2")
+        doc["tracks"] = [unfinished, complete, other]
         self._save(doc)
 
         on_session_end(session_id="s1")
 
-        by_sid = {t["sessionId"]: t for t in self._doc()["tracks"]}
-        self.assertTrue(by_sid["s1"]["isDismissed"])
-        self.assertFalse(by_sid["s2"]["isDismissed"])
+        by_title = {t["title"]: t for t in self._doc()["tracks"]}
+        self.assertTrue(by_title["A"]["isDismissed"])
+        self.assertFalse(by_title["A done"]["isDismissed"])
+        self.assertFalse(by_title["B"]["isDismissed"])
 
-    def test_prune_drops_old_dismissed_and_complete_tracks(self) -> None:
-        """Dismissed/complete tracks expire too, or the store grows without bound."""
+    def test_new_task_replaces_completed_bar(self) -> None:
+        """A new title+tasks payload clears the previous completed bar from this session."""
+        doc = self._doc()
+        old = store.new_track("old done", ["a"], session_id="s1")
+        for task in old["tasks"]:
+            task["state"] = "completed"
+        doc["tracks"] = [old]
+        self._save(doc)
+
+        store.apply_op(doc, "title", {"title": "next task", "tasks": ["one", "two"]}, session_id="s1")
+
+        tracks = [t for t in doc["tracks"] if t.get("sessionId") == "s1"]
+        self.assertEqual([t["title"] for t in tracks], ["next task"])
+
+    def test_prune_keeps_complete_but_drops_stale_unfinished(self) -> None:
+        """Completed bars persist past the stale window; stale unfinished/dismissed bars expire."""
         stale = store._now_ms() - store.STALE_MS - 1000
         old_dismissed = store.new_track("old", ["a"], session_id="s1")
         old_dismissed["isDismissed"] = True
@@ -412,7 +429,7 @@ class TestSessionCloseAndPrune(_StoreCase):
 
         store.prune_stale_tracks(self._doc())
 
-        self.assertEqual([t["title"] for t in self._doc()["tracks"]], ["fresh"])
+        self.assertEqual([t["title"] for t in self._doc()["tracks"]], ["done", "fresh"])
 
 
     def test_wait_time_is_scoped_to_the_tracks_own_session(self) -> None:

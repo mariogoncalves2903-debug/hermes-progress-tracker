@@ -13,7 +13,7 @@ It is a port of [mjoyshuvo/claude-progress-tracker](https://github.com/mjoyshuvo
 ## Features
 
 - **Live bar.** Each goal-level task list gets a row with a moving bar. The pill names the current task and its step, for example `Build harness 2/5`.
-- **Real totals.** A declared task list shows `3/5` and a percent. Work without a list still counts steps as the agent moves.
+- **Real totals.** A declared task list shows `3/5` and a percent. No total is invented when the list is absent.
 - **Standing rule.** Any request that can be decomposed is broken into goal-level steps and tracked automatically.
 - **Enforcement.** Once a request looks like project work, heavy tools are blocked until a real bar exists. Explanatory questions and trivial one-shot actions stay untracked.
 - **Waits on you.** A question, permission prompt, or approval turns the row amber and appears in the Progress pane.

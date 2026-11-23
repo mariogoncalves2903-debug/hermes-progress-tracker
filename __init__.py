@@ -60,10 +60,6 @@ def _sid(kwargs: Dict[str, Any]) -> str:
     )
 
 
-def _cfg() -> Dict[str, Any]:
-    return store._config
-
-
 # ─── Multi-step enforcement ───
 # A prompt section alone does not guarantee the model calls the tool. These hooks close the
 # gap: once a session shows project-shaped user intent, heavy execution tools are blocked

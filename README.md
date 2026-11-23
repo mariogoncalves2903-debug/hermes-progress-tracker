@@ -11,6 +11,7 @@ A [Hermes Agent](https://hermes-agent.nousresearch.com/) desktop plugin that sho
 ## Features
 
 - Per-session task bar: create with goal-level steps, advance, skip, mark failed/fixed, add steps later.
+- Standing rule: any request that can be decomposed is broken into goal-level steps and tracked automatically.
 - Blocks timeline: permission requests, human-input questions, and tool rows.
 - Findings log with capped history.
 - Token/context tiles from model calls.

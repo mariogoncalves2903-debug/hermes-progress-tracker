@@ -409,6 +409,14 @@ def _cmd_progress(raw_args: str = "", **kwargs) -> str:
 
 # ─── Plugin entry point ───
 
+PROGRESS_RULE = (
+    "If the user's request can be broken down into steps, decompose it into goal-level steps "
+    "and track them with the progress_tracker tool: call it with {title, tasks:[...]} before "
+    "starting work, then advance steps as they complete. Only skip it for a trivial one-shot "
+    "action that cannot be decomposed."
+)
+
+
 def register(ctx) -> None:
     """Hermes plugin entry point."""
     # Load config (SPEC 6.6 inputs)
@@ -434,6 +442,16 @@ def register(ctx) -> None:
         description="Track the user's plan as goal-level tasks (not tool names), blocks, and findings",
         emoji="📈",
     )
+
+    # Standing rule for every session: decomposable work is decomposed and tracked.
+    register_section = getattr(ctx, "register_system_prompt_section", None)
+    if callable(register_section):
+        try:
+            register_section("progress-tracker", PROGRESS_RULE, max_chars=900)
+        except (TypeError, ValueError) as exc:
+            _log.warning("progress-tracker prompt section unavailable: %s", exc)
+    else:
+        _log.warning("progress-tracker prompt section API unavailable on this Hermes host")
 
     # Hooks — must match provides_hooks in plugin.yaml exactly
     hooks = [

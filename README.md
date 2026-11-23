@@ -4,6 +4,26 @@
 
 A [Hermes Agent](https://hermes-agent.nousresearch.com/) desktop plugin that shows real progress bars for agent work: goal-level tasks, permission/question blocks, findings, token/context usage, and work-vs-wait timing.
 
+![hero](assets/states/hero.gif)
+
+---
+
+## All States
+
+| State | Preview |
+|-------|---------|
+| **Idle** — no task list running | ![idle](assets/states/idle.gif) |
+| **Working** — tasks in progress, bar fills as steps complete | ![working](assets/states/working.gif) |
+| **Waiting (permission)** — blocked on a file-edit permission prompt | ![waiting-permission](assets/states/waiting-permission.gif) |
+| **Waiting (question)** — blocked on a human question | ![waiting-question](assets/states/waiting-question.gif) |
+| **Waiting (approval)** — blocked on plan approval | ![waiting-approval](assets/states/waiting-approval.gif) |
+| **Failed** — a step hit an error, findings logged | ![failed](assets/states/failed.gif) |
+| **Skipped** — a step was skipped, work continues | ![skipped](assets/states/skipped.gif) |
+| **Done** — all steps complete, bar fades out | ![done](assets/states/done.gif) |
+| **Log view** — permission blocks, answered items, findings | ![log](assets/states/log.gif) |
+
+---
+
 ## Features
 
 - Per-session task bar: create with goal-level steps, advance, skip, mark failed/fixed, add steps later.

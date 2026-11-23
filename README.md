@@ -1,73 +1,126 @@
 # Hermes Progress Tracker
 
-> Hermes fork/port of [mjoyshuvo/claude-progress-tracker](https://github.com/mjoyshuvo/claude-progress-tracker) — originally a Claude Code hooks plugin, adapted to run on Hermes Agent.
+[![version](https://img.shields.io/badge/version-0.2.0-2bb5a5)](plugin.yaml)
+[![license](https://img.shields.io/badge/license-MIT-2bb5a5)](LICENSE)
+[![upstream](https://img.shields.io/badge/fork%20of-mjoyshuvo%2Fclaude--progress--tracker-2bb5a5)](https://github.com/mjoyshuvo/claude-progress-tracker)
 
-A [Hermes Agent](https://hermes-agent.nousresearch.com/) desktop plugin that shows real progress bars for agent work: goal-level tasks, permission/question blocks, findings, token/context usage, and work-vs-wait timing.
+Hermes Progress Tracker is a [Hermes Agent](https://hermes-agent.nousresearch.com/) plugin that shows what the agent is doing while it works. It draws a live progress bar above the composer, and it adds a Progress pane that lists what waits on you and what the agent found.
 
-![hero](assets/states/hero.gif)
+It is a port of [mjoyshuvo/claude-progress-tracker](https://github.com/mjoyshuvo/claude-progress-tracker), originally a Claude Code hooks plugin, adapted to the Hermes plugin API.
 
----
+![A desktop session: a Working bar counts steps, tasks expand into a timeline, a permission prompt turns the row amber, a failure turns it red, and the finished list stays visible until the next task.](assets/states/hero.gif)
 
 ## Features
 
-- Per-session task bar: create with goal-level steps, advance, skip, mark failed/fixed, add steps later.
-- Standing rule: any request that can be decomposed is broken into goal-level steps and tracked automatically.
-- Enforcement: once a request looks like project work (build/create/implement/harness/fix/deploy/etc. with explicit multi-step phrasing), heavy tools (`terminal`, `execute_code`, `write_file`, `patch`, `browser_exec`, `computer_use`, `delegate_task`, `tool_call`) are blocked until a real bar exists. Explanatory questions stay untracked; trivial one-shot actions stay untracked.
-- Blocks timeline: permission requests, human-input questions, and tool rows.
-- Findings log with capped history.
-- Token/context tiles from model calls.
-- Work vs waited-on-you timing. Wait only counts open permission/question blocks — tool calls are work, not waiting.
-- Session-scoped: each conversation has its own bar; when a session ends only its unfinished bar is dismissed — a completed bar stays visible until the next task replaces it.
-- Desktop pane plus an above-the-composer band.
-
-## Requirements
-
-Hermes >= 0.22 (see `requires_hermes` in `plugin.yaml`).
+- **Live bar.** Each goal-level task list gets a row with a moving bar. The pill names the current task and its step, for example `Build harness 2/5`.
+- **Real totals.** A declared task list shows `3/5` and a percent. Work without a list still counts steps as the agent moves.
+- **Standing rule.** Any request that can be decomposed is broken into goal-level steps and tracked automatically.
+- **Enforcement.** Once a request looks like project work, heavy tools are blocked until a real bar exists. Explanatory questions and trivial one-shot actions stay untracked.
+- **Waits on you.** A question, permission prompt, or approval turns the row amber and appears in the Progress pane.
+- **Failing checks.** A failing step turns the row red, logs the reason, and keeps a failure count.
+- **Findings log.** Root causes, decisions, and failures stay in the pane with capped history.
+- **Measured numbers.** Work time excludes time spent waiting on you; token and context tiles come from model calls.
+- **Session-scoped rows.** Each conversation has its own bar. Ending a session dismisses only its unfinished bar; a completed bar stays visible until the next task replaces it.
+- **Desktop pane plus band.** The bar sits above the composer; `/progress` opens the details pane.
 
 ## Install
+
+Hermes >= 0.22 is required (see `requires_hermes` in `plugin.yaml`).
 
 1. Copy this directory to `$HERMES_HOME/plugins/progress-tracker`.
 2. Run `hermes plugins enable progress-tracker`.
 3. Restart the gateway.
-4. In Capabilities -> Plugins, enable **Progress Tracker**, then run "Reload desktop plugins".
+4. In Capabilities -> Plugins, enable **Progress Tracker**, then run **Reload desktop plugins**.
 
-## Install by asking Hermes
-
-Paste this into Hermes:
+To install it by asking Hermes, paste this:
 
 ```text
 Install the Hermes Progress Tracker plugin from https://github.com/mariogoncalves2903-debug/hermes-progress-tracker: clone it into $HERMES_HOME/plugins/progress-tracker, run `hermes plugins enable progress-tracker`, restart the gateway, then enable Progress Tracker in Capabilities -> Plugins and reload desktop plugins.
 ```
 
-## Tool
+## Read the bar
 
-The agent drives the bar through the `progress_tracker` tool:
+Each task list gets one row. A row has a label, the bar, its numbers, and the state colour.
+
+| Colour | State | Pill text |
+| --- | --- | --- |
+| Purple | The agent is working. | `Build 2/5` or `Working · 12 steps` |
+| Red | A step failed in the current task. | `✕ Verify 1/2` or `✕ Test 3/5 ×3` |
+| Amber | The agent waits for you. | `Waiting for you` or `Waiting for approval` |
+| Green | Every task is done. | `✓ Done 5/5` |
+
+The row shows measured values only: progress, time worked, time waited on you, tokens in/out, model calls, and context fill. It does not guess time remaining.
+
+A finished row stays visible until the next task replaces it. Starting a new session drops stale unfinished and hidden rows; completed rows remain until replaced.
+
+## Use the enforcement rule
+
+The plugin adds a short system-prompt rule: if a request can be broken into steps, the agent breaks it down and tracks it. Prompt guidance alone is not enough, so the hook layer enforces it narrowly.
+
+Once a request looks like project work, heavy tools are blocked until a real bar exists:
+
+- `terminal`, `execute_code`, `write_file`, `patch`
+- `browser_exec`, `computer_use`
+- `delegate_task`, `tool_call`
+
+The detector looks for build-shaped language (`build`, `create`, `implement`, `harness`, `fix`, `deploy`, and similar) plus request phrasing. It ignores explanatory openers such as “explain how to…”, and it leaves trivial one-shot chatter untracked. A successful `progress_tracker` call clears the project hint, so later unrelated commands in the same session are not blocked forever.
+
+## The `progress_tracker` tool
+
+The agent drives the bar through `progress_tracker`:
 
 | op | args | effect |
-|---|---|---|
-| `title` | `title`, `tasks` | create a bar with goal-level steps |
-| `tasks` | `tasks` | replace the task list |
-| `add` | `tasks` | append steps |
-| `next` | - | advance to the next step |
-| `active` | `task` | set a named step active |
-| `skip` | `task` | skip a named step |
-| `failed` | `text` | mark the active step failed |
-| `fixed` | - | clear failure state |
-| `found` | `text` | log a finding |
-| `dismiss` | - | dismiss the bar |
+| --- | --- | --- |
+| `title` | `title`, `tasks` | Create a bar with goal-level steps. |
+| `tasks` | `tasks` | Replace the task list. |
+| `add` | `tasks` | Append steps found during the work. |
+| `next` | - | Finish the current task and start the next one. |
+| `active` | `task` | Make the named step active; part of the name is enough. |
+| `skip` | `task` | Close the current task as not needed. |
+| `failed` | `text` | Mark the active step failed with this reason. |
+| `fixed` | - | Clear the failure state. |
+| `found` | `text` | Log a finding to the Progress pane. Works without a bar. |
+| `dismiss` | - | Dismiss the bar. |
 
-Use goal-level steps from the user's request, never raw tool names.
+Use goal-level steps from the user's request, never raw tool names. If the agent names a task that does not exist, the tool refuses the call and lists the task names.
 
 ## Configuration
 
 See `plugin.yaml`: `enabled_tools`, `enabled_findings`, `max_findings`, `max_turns_retained`.
 
-## Tests
+## Test
+
+From the plugin folder:
 
 ```bash
-cd tests
-python -m unittest discover -s . -v
+python -m unittest discover -s tests -v
 ```
+
+To check the manifest and hooks the way Hermes loads them:
+
+```bash
+hermes plugins doctor progress-tracker
+```
+
+## Project layout
+
+| Path | Contents |
+| --- | --- |
+| `__init__.py` | Plugin registration, hooks, enforcement gate, and the `progress_tracker` tool. |
+| `progress_store.py` | State store: rows, tasks, blocks, findings, turns, and pruning. |
+| `desktop/plugin.js` | Desktop renderer for the band and Progress pane. |
+| `desktop/plugin.css` | Styling for the band and pane. |
+| `plugin.yaml` | Manifest, hook declarations, and config schema. |
+| `tests/` | Unit tests for the store and hooks. |
+| `assets/states/` | Animated state previews. |
+
+## Known limits
+
+- Only the main conversation is tracked. Sub-agent task calls do not feed the parent bar.
+- Work time and tokens count from when the plugin loaded. A row open before a reload shows only post-reload activity.
+- Enforcement judges request shape, not intent. It is deliberately conservative: some short project requests may pass untracked, and some research inside a tracked task is allowed once a bar exists.
+- Read-only research tools (`read_file`, `search_files`, `web_search`) are not gated; the gate targets side-effecting and meta-tools.
+- The timeline colours are tuned for the dark theme.
 
 ## License
 

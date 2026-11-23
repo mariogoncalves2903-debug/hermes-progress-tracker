@@ -67,19 +67,25 @@ def _sid(kwargs: Dict[str, Any]) -> str:
 
 ENFORCED_TOOLS = frozenset({
     "terminal", "execute_code", "write_file", "patch", "browser_exec",
-    "delegate_task", "tool_call",
+    "computer_use", "delegate_task", "tool_call",
 })
 
 _PROJECT_KEYWORDS = (
     "build", "create", "make", "implement", "harness", "integrate", "port",
     "refactor", "automate", "develop", "scaffold", "migrate", "plugin",
     "desktop", "backend", "script", "project", "app", "api", "install",
+    "fix", "debug", "resolve", "deploy", "test", "configure", "setup",
 )
 
 _PROJECT_PHRASES = (
     "can you", "could you", "i need", "i want", "let's", "lets", "so it",
     "so that", "and then", "in order to", "step 1", "first,", "then,",
     "finally,", "background", "deliver", "run in the background",
+)
+
+_EXPLAIN_PREFIXES = (
+    "explain", "what is", "what are", "why does", "why do", "how does",
+    "how to", "teach me", "describe", "tutorial", "guide me", "learn about",
 )
 
 _MIN_PROJECT_CHARS = 100
@@ -92,26 +98,37 @@ _BLOCK_MESSAGE = (
 
 
 def _looks_like_multistep(text: Any) -> bool:
-    """Conservative project detector: long request plus explicit build/request signals."""
+    """Conservative project detector: request signals plus execution shape.
+
+    Two keyword hits lower the length bar; explanatory openers ("explain how to...")
+    are questions, not work orders, unless the message also starts with a build verb.
+    """
     if not isinstance(text, str):
         return False
     t = text.lower().strip()
-    if len(t) < _MIN_PROJECT_CHARS:
+    if len(t) < 50:
         return False
     keywords = sum(1 for k in _PROJECT_KEYWORDS if k in t)
     phrases = sum(1 for p in _PROJECT_PHRASES if p in t)
-    return keywords >= 1 and (phrases >= 1 or keywords >= 2 or t.count("?") >= 2)
+    if keywords < 1:
+        return False
+    head = t[:60]
+    if any(p in head for p in _EXPLAIN_PREFIXES):
+        return False
+    min_len = 50 if keywords >= 2 else _MIN_PROJECT_CHARS
+    if len(t) < min_len:
+        return False
+    return phrases >= 1 or keywords >= 2 or t.count("?") >= 2
 
 
 def _has_active_track(doc: Dict[str, Any], session_id: str) -> bool:
-    """Exact-session, non-dismissed, non-completed bar. Legacy None-owner bars do not count."""
-    tracks = [t for t in doc.get("tracks", []) if t.get("sessionId") == session_id]
-    if not tracks:
-        return False
-    track = tracks[-1]
-    if track.get("isDismissed"):
-        return False
-    return track.get("statusKey") != "completed"
+    """Any exact-session, non-dismissed, non-completed bar. Legacy None-owner bars do not count."""
+    return any(
+        t.get("sessionId") == session_id
+        and not t.get("isDismissed")
+        and t.get("statusKey") != "completed"
+        for t in doc.get("tracks", [])
+    )
 
 
 def _enforcement_directive(tool_name: str, session_id: str) -> Optional[Dict[str, str]]:
@@ -301,8 +318,8 @@ def on_pre_llm_call(**kwargs):
     if not kwargs.get("parent_session_id") and isinstance(user_message, str) and user_message.strip():
         session = store.ensure_session(doc, session_id)
         session["lastUserMessage"] = user_message[:4000]
-        if _looks_like_multistep(user_message):
-            session["projectHint"] = True
+        # Intent is per-request: a later non-project question must not stay blocked forever.
+        session["projectHint"] = _looks_like_multistep(user_message)
     store.save_document(doc)
     if kwargs.get("parent_session_id"):
         return ""  # upstream nudges the main loop only

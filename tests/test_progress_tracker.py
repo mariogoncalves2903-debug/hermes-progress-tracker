@@ -382,6 +382,13 @@ class TestMultistepEnforcement(_StoreCase):
         self.assertFalse(_looks_like_multistep(
             "x" * 120 + " build build build build build build build build build build"
         ))
+        self.assertFalse(_looks_like_multistep(
+            "Can you explain how to build a React app? I need to understand the architecture "
+            "for my thesis and learn about the best folder structure."
+        ))
+        self.assertTrue(_looks_like_multistep(
+            "can you create a script that reads a file and prints it?"
+        ))
 
     def test_blocks_heavy_tool_until_bar_exists(self) -> None:
         self._seed_project_intent()
@@ -426,6 +433,27 @@ class TestMultistepEnforcement(_StoreCase):
         on_pre_tool_call(tool_name="terminal", args={}, session_id="s1")
         after = self._doc()["sessions"]["s1"].get("callsSinceMove", 0)
         self.assertEqual(before, after)
+
+    def test_hint_resets_on_nonproject_followup(self) -> None:
+        self._seed_project_intent()
+        self.assertTrue(self._doc()["sessions"]["s1"]["projectHint"])
+        on_pre_llm_call(session_id="s1", turn_id="t2", user_message="what time is it?")
+        self.assertFalse(self._doc()["sessions"]["s1"]["projectHint"])
+        self.assertIsNone(on_pre_tool_call(tool_name="terminal", args={}, session_id="s1"))
+
+    def test_any_active_track_satisfies_enforcement(self) -> None:
+        self._seed_project_intent()
+        active = self._make_track("Active task")
+        self._make_track("Completed later", completed=True)
+        doc = self._doc()
+        self.assertFalse(doc["tracks"][-1].get("isDismissed"))
+        self.assertEqual(doc["tracks"][-1]["statusKey"], "completed")
+        self.assertIsNone(on_pre_tool_call(tool_name="terminal", args={}, session_id="s1"))
+
+    def test_computer_use_blocked_without_bar(self) -> None:
+        self._seed_project_intent()
+        result = on_pre_tool_call(tool_name="computer_use", args={}, session_id="s1")
+        self.assertEqual((result or {}).get("action"), "block")
 
 
 class TestHookWrappers(_StoreCase):

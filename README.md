@@ -12,7 +12,7 @@ A [Hermes Agent](https://hermes-agent.nousresearch.com/) desktop plugin that sho
 
 - Per-session task bar: create with goal-level steps, advance, skip, mark failed/fixed, add steps later.
 - Standing rule: any request that can be decomposed is broken into goal-level steps and tracked automatically.
-- Enforcement: once a request looks like project work (build/create/implement/harness/integrate/etc. with explicit multi-step phrasing), heavy tools (`terminal`, `execute_code`, `write_file`, `patch`, `browser_exec`, `delegate_task`, `tool_call`) are blocked until a real bar exists. Trivial one-shot actions stay untracked.
+- Enforcement: once a request looks like project work (build/create/implement/harness/fix/deploy/etc. with explicit multi-step phrasing), heavy tools (`terminal`, `execute_code`, `write_file`, `patch`, `browser_exec`, `computer_use`, `delegate_task`, `tool_call`) are blocked until a real bar exists. Explanatory questions stay untracked; trivial one-shot actions stay untracked.
 - Blocks timeline: permission requests, human-input questions, and tool rows.
 - Findings log with capped history.
 - Token/context tiles from model calls.

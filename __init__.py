@@ -64,6 +64,73 @@ def _cfg() -> Dict[str, Any]:
     return store._config
 
 
+# ─── Multi-step enforcement ───
+# A prompt section alone does not guarantee the model calls the tool. These hooks close the
+# gap: once a session shows project-shaped user intent, heavy execution tools are blocked
+# until a real bar exists. Narrow on purpose — trivial one-shot actions stay untracked.
+
+ENFORCED_TOOLS = frozenset({
+    "terminal", "execute_code", "write_file", "patch", "browser_exec",
+    "delegate_task", "tool_call",
+})
+
+_PROJECT_KEYWORDS = (
+    "build", "create", "make", "implement", "harness", "integrate", "port",
+    "refactor", "automate", "develop", "scaffold", "migrate", "plugin",
+    "desktop", "backend", "script", "project", "app", "api", "install",
+)
+
+_PROJECT_PHRASES = (
+    "can you", "could you", "i need", "i want", "let's", "lets", "so it",
+    "so that", "and then", "in order to", "step 1", "first,", "then,",
+    "finally,", "background", "deliver", "run in the background",
+)
+
+_MIN_PROJECT_CHARS = 100
+
+_BLOCK_MESSAGE = (
+    "progress-tracker: this looks like multi-step work and no active progress bar exists. "
+    "Call progress_tracker now with {\"op\": \"title\", \"title\": <goal>, \"tasks\": [...]} "
+    "before running more tools."
+)
+
+
+def _looks_like_multistep(text: Any) -> bool:
+    """Conservative project detector: long request plus explicit build/request signals."""
+    if not isinstance(text, str):
+        return False
+    t = text.lower().strip()
+    if len(t) < _MIN_PROJECT_CHARS:
+        return False
+    keywords = sum(1 for k in _PROJECT_KEYWORDS if k in t)
+    phrases = sum(1 for p in _PROJECT_PHRASES if p in t)
+    return keywords >= 1 and (phrases >= 1 or keywords >= 2 or t.count("?") >= 2)
+
+
+def _has_active_track(doc: Dict[str, Any], session_id: str) -> bool:
+    """Exact-session, non-dismissed, non-completed bar. Legacy None-owner bars do not count."""
+    tracks = [t for t in doc.get("tracks", []) if t.get("sessionId") == session_id]
+    if not tracks:
+        return False
+    track = tracks[-1]
+    if track.get("isDismissed"):
+        return False
+    return track.get("statusKey") != "completed"
+
+
+def _enforcement_directive(tool_name: str, session_id: str) -> Optional[Dict[str, str]]:
+    """Return a pre_tool_call block directive when project intent is untracked."""
+    if tool_name not in ENFORCED_TOOLS:
+        return None
+    doc = store.get_document()
+    if _has_active_track(doc, session_id):
+        return None
+    session = doc.get("sessions", {}).get(session_id) or {}
+    if not session.get("projectHint") and not _looks_like_multistep(session.get("lastUserMessage")):
+        return None
+    return {"action": "block", "message": _BLOCK_MESSAGE}
+
+
 def _truncate_failed_output(result: Any) -> Optional[str]:
     """Bound stored failure output: first 8 lines, max 2000 chars."""
     if not isinstance(result, str):
@@ -115,15 +182,21 @@ class _MemoryState:
 @_hook
 def on_pre_tool_call(**kwargs):
     """Track one TOOL row per call per SPEC 2.3; negative tool names ignored; close-consecutive
-    dedupe; never veto. No auto-bar: a bar is only created when the agent plans one — auto-building
-    steps from tool names produced junk like "skill_view". The stall note is returned from
-    on_pre_llm_call instead: a pre_tool_call return value is a tool directive
+    dedupe. No auto-bar: a bar is only created when the agent plans one — auto-building steps
+    from tool names produced junk like "skill_view". Enforcement is narrow: once the user's
+    request looks like project work, heavy tools are blocked until a real bar exists. The stall
+    note rides on_pre_llm_call instead: a pre_tool_call return value is a tool directive
     (block/approve/modify), so a plain string there is dropped by the dispatcher."""
     tool_name = kwargs.get("tool_name") or kwargs.get("function_name") or ""
     if not tool_name or tool_name.startswith("-"):
         return
     sid = _sid(kwargs)
     doc = store.get_document()
+
+    directive = _enforcement_directive(tool_name, sid)
+    if directive is not None:
+        return directive
+
     track = store.session_track(doc, sid)
 
     # Call counting / nudge logic (only for main-loop tools, not internal)
@@ -171,6 +244,13 @@ def on_post_tool_call(**kwargs):
     doc = store.get_document()
     track = store.session_track(doc, session_id)
 
+    # A successful planning call satisfies enforcement until the next task replaces the bar.
+    if tool_name == "progress_tracker" and status == "ok":
+        session = store.ensure_session(doc, session_id)
+        if any(t.get("sessionId") == session_id and t.get("statusKey") != "completed"
+               for t in doc.get("tracks", [])):
+            session["projectHint"] = False
+
     # A failed step fails the list. Permission denials are blocked, not failed.
     # Bash stays upstream-strict (only isCheck commands fail): a nonzero grep/diff/test is
     # often a legitimate answer, and marking those red would cry wolf.
@@ -215,11 +295,18 @@ def on_post_tool_call(**kwargs):
 @_hook
 def on_pre_llm_call(**kwargs):
     """Begin turn — SPEC 2.1. The stall note (upstream :913/:990) rides this turn's injected
-    context, which is the only plugin channel that reaches the model as text."""
+    context, which is the only plugin channel that reaches the model as text. Also records the
+    user's request shape so multi-step enforcement survives later "continue" turns."""
     session_id = _sid(kwargs)
     turn_id = kwargs.get("turn_id")
     doc = store.get_document()
     store.begin_turn(doc, session_id, turn_id)
+    user_message = kwargs.get("user_message")
+    if not kwargs.get("parent_session_id") and isinstance(user_message, str) and user_message.strip():
+        session = store.ensure_session(doc, session_id)
+        session["lastUserMessage"] = user_message[:4000]
+        if _looks_like_multistep(user_message):
+            session["projectHint"] = True
     store.save_document(doc)
     if kwargs.get("parent_session_id"):
         return ""  # upstream nudges the main loop only
@@ -410,10 +497,11 @@ def _cmd_progress(raw_args: str = "", **kwargs) -> str:
 # ─── Plugin entry point ───
 
 PROGRESS_RULE = (
-    "If the user's request can be broken down into steps, decompose it into goal-level steps "
-    "and track them with the progress_tracker tool: call it with {title, tasks:[...]} before "
-    "starting work, then advance steps as they complete. Only skip it for a trivial one-shot "
-    "action that cannot be decomposed."
+    "Decomposable work is tracked, not optional. Before starting, decompose the user's request "
+    "into goal-level steps and call progress_tracker with {\"op\": \"title\", \"title\": <goal>, "
+    "\"tasks\": [...]}; then advance steps as they complete. Skip only trivial one-shot actions "
+    "that cannot be decomposed. Heavy execution tools are blocked until a real bar exists — "
+    "a fabricated or tool-name-derived step list is forbidden."
 )
 
 

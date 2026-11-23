@@ -10,6 +10,7 @@ from typing import Any, Dict
 import progress_store as store
 from __init__ import (
     _cmd_progress,
+    _looks_like_multistep,
     on_pre_tool_call,
     on_post_tool_call,
     on_pre_llm_call,
@@ -350,6 +351,81 @@ class TestProgressTracker(_StoreCase):
         qs = [b for b in doc["log"]["blocks"] if b["kind"] == "question"]
         self.assertEqual(qs[-1]["details"]["kind"], "clarify")
         self.assertEqual(qs[-1]["outcome"], "dismissed")
+
+
+class TestMultistepEnforcement(_StoreCase):
+    PROJECT_MSG = (
+        "can you build a harness for Gemini Desktop so it can run in the background and "
+        "deliver an API? Let's say I have Gemini running in the background and I plug the "
+        "API into Nine Router, then take the reply and convert it into something usable."
+    )
+
+    def _seed_project_intent(self, session_id: str = "s1") -> None:
+        on_pre_llm_call(session_id=session_id, turn_id="t1", user_message=self.PROJECT_MSG)
+
+    def _make_track(self, title: str, session_id: str = "s1", completed: bool = False) -> Dict[str, Any]:
+        t = store.new_track(title, ["a", "b"], session_id=session_id)
+        if completed:
+            for task in t["tasks"]:
+                task["state"] = "completed"
+            t["statusKey"] = "completed"
+            t["activeTaskId"] = None
+        doc = self._doc()
+        doc.setdefault("tracks", []).append(t)
+        self._save(doc)
+        return t
+
+    def test_detector_boundaries(self) -> None:
+        self.assertFalse(_looks_like_multistep("fix this bug"))
+        self.assertFalse(_looks_like_multistep(None))
+        self.assertTrue(_looks_like_multistep(self.PROJECT_MSG))
+        self.assertFalse(_looks_like_multistep(
+            "x" * 120 + " build build build build build build build build build build"
+        ))
+
+    def test_blocks_heavy_tool_until_bar_exists(self) -> None:
+        self._seed_project_intent()
+        result = on_pre_tool_call(tool_name="terminal", args={"command": "echo hi"}, session_id="s1")
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result.get("action"), "block")
+        self.assertIn('"op": "title"', result.get("message", ""))
+
+    def test_read_only_tool_not_blocked(self) -> None:
+        self._seed_project_intent()
+        self.assertIsNone(on_pre_tool_call(tool_name="search_files", args={}, session_id="s1"))
+
+    def test_progress_tracker_tool_not_blocked(self) -> None:
+        self._seed_project_intent()
+        self.assertIsNone(on_pre_tool_call(tool_name="progress_tracker", args={"op": "title"}, session_id="s1"))
+
+    def test_active_bar_allows_heavy_tool(self) -> None:
+        self._seed_project_intent()
+        self._make_track("Build harness")
+        self.assertIsNone(on_pre_tool_call(tool_name="terminal", args={"command": "echo hi"}, session_id="s1"))
+
+    def test_completed_bar_does_not_cover_next_task(self) -> None:
+        self._seed_project_intent()
+        self._make_track("Old task", completed=True)
+        result = on_pre_tool_call(tool_name="write_file", args={}, session_id="s1")
+        self.assertEqual((result or {}).get("action"), "block")
+
+    def test_short_request_not_blocked(self) -> None:
+        on_pre_llm_call(session_id="s1", turn_id="t1", user_message="what time is it?")
+        self.assertIsNone(on_pre_tool_call(tool_name="terminal", args={}, session_id="s1"))
+
+    def test_subagent_intent_not_recorded(self) -> None:
+        on_pre_llm_call(
+            session_id="child1", turn_id="t1", user_message=self.PROJECT_MSG,
+            parent_session_id="s1",
+        )
+        self.assertIsNone(on_pre_tool_call(tool_name="terminal", args={}, session_id="child1"))
+
+    def test_block_does_not_count_as_tool_call(self) -> None:
+        self._seed_project_intent()
+        before = self._doc()["sessions"]["s1"].get("callsSinceMove", 0)
+        on_pre_tool_call(tool_name="terminal", args={}, session_id="s1")
+        after = self._doc()["sessions"]["s1"].get("callsSinceMove", 0)
+        self.assertEqual(before, after)
 
 
 class TestHookWrappers(_StoreCase):

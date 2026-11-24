@@ -27,15 +27,33 @@ It is a port of [mjoyshuvo/claude-progress-tracker](https://github.com/mjoyshuvo
 
 Hermes >= 0.22 is required (see `requires_hermes` in `plugin.yaml`).
 
-1. Copy this directory to `$HERMES_HOME/plugins/progress-tracker`.
-2. Run `hermes plugins enable progress-tracker`.
-3. Restart the gateway.
-4. In Capabilities -> Plugins, enable **Progress Tracker**, then run **Reload desktop plugins**.
+```bash
+hermes plugins install mariogoncalves2903-debug/hermes-progress-tracker --enable
+```
+
+Then restart the gateway and enable **Progress Tracker** in Capabilities → Plugins → Reload desktop plugins.
 
 To install it by asking Hermes, paste this:
 
 ```text
-Install the Hermes Progress Tracker plugin from https://github.com/mariogoncalves2903-debug/hermes-progress-tracker: clone it into $HERMES_HOME/plugins/progress-tracker, run `hermes plugins enable progress-tracker`, restart the gateway, then enable Progress Tracker in Capabilities -> Plugins and reload desktop plugins.
+Install the Hermes Progress Tracker plugin from https://github.com/mariogoncalves2903-debug/hermes-progress-tracker using `hermes plugins install`, enable it, restart the gateway, then enable Progress Tracker in Capabilities → Plugins and reload desktop plugins.
+```
+
+## Updates
+
+The installer tracks this repo as a Git install. Updates arrive automatically when `plugins.auto_apply` is on:
+
+```bash
+hermes plugins auto-update on
+```
+
+The gateway checks for updates every 24 hours by default (configurable via `plugins.auto_update_check_hours`). Updated code loads in new sessions.
+
+To check and apply manually:
+
+```bash
+hermes plugins check-updates        # see what changed
+hermes plugins update progress-tracker   # pull the latest
 ```
 
 ## Read the bar

@@ -9,6 +9,8 @@ from typing import Any, Dict
 
 import progress_store as store
 from __init__ import (
+    PROGRESS_RULE,
+    TOOL_SCHEMA,
     _cmd_progress,
     _looks_like_multistep,
     on_pre_tool_call,
@@ -191,6 +193,20 @@ class TestProgressTracker(_StoreCase):
             json.loads(res)["error"],
             'progress_tracker: no task named "nope"; tasks are "A", "B".',
         )
+
+    def test_unknown_op_lists_valid_ops(self) -> None:
+        """An invalid op names the valid set, so the model can self-correct."""
+        self._track("T", ["A"])
+        res, _ = store.apply_op(self._doc(), "advance", {})
+        err = json.loads(res)["error"]
+        self.assertIn('unknown op "advance"', err)
+        for op in ("title", "tasks", "next", "active", "add", "skip", "failed", "fixed", "found", "dismiss"):
+            self.assertIn(op, err)
+
+    def test_prompt_and_schema_name_next_and_dismiss(self) -> None:
+        """The standing rule says op=next explicitly; schema accepts every documented op."""
+        self.assertIn('{"op": "next"}', PROGRESS_RULE)
+        self.assertIn("dismiss", TOOL_SCHEMA["properties"]["op"]["enum"])
 
     def test_found_dedupe_identical_and_different(self) -> None:
         """Identical findings deduped; different kind/text stored."""

@@ -763,7 +763,8 @@ def apply_op(doc: Dict[str, Any], op: str, args: Dict[str, Any],
         _cap_findings(doc)
         return json.dumps({"result": "noted"}), {"track": _track_snapshot(track)}
 
-    return json.dumps({"error": f'progress_tracker: unknown op "{op}"'}), {}
+    valid_ops = "title, tasks, next, active, add, skip, failed, fixed, found, dismiss"
+    return json.dumps({"error": f'progress_tracker: unknown op "{op}" (valid ops: {valid_ops})'}), {}
 
 
 def _track_snapshot(track: Dict[str, Any], blocks: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:

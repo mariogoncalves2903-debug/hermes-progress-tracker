@@ -95,7 +95,7 @@ The agent drives the bar through `progress_tracker`:
 | `next` | - | Finish the current task and start the next one. |
 | `active` | `task` | Make the named step active; part of the name is enough. |
 | `skip` | `task` | Close the current task as not needed. |
-| `failed` | `text` | Mark the active step failed with this reason. |
+| `failed` | `reason` | Mark the active step failed with this reason. |
 | `fixed` | - | Clear the failure state. |
 | `found` | `text` | Log a finding to the Progress pane. Works without a bar. |
 | `dismiss` | - | Dismiss the bar. |

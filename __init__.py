@@ -26,8 +26,8 @@ TOOL_SCHEMA = {
     "properties": {
         "op": {
             "type": "string",
-            "enum": ["title", "tasks", "next", "active", "add", "skip", "failed", "fixed", "found"],
-            "description": "Operation to perform on the progress bar"
+            "enum": ["title", "tasks", "next", "active", "add", "skip", "failed", "fixed", "found", "dismiss"],
+            "description": "Operation: title, tasks, next, active, add, skip, failed, fixed, found, or dismiss"
         },
         "title": {"type": "string", "description": "New title for the bar (op=title)"},
         "tasks": {
@@ -514,7 +514,7 @@ def _cmd_progress(raw_args: str = "", **kwargs) -> str:
 PROGRESS_RULE = (
     "Decomposable work is tracked, not optional. Before starting, decompose the user's request "
     "into goal-level steps and call progress_tracker with {\"op\": \"title\", \"title\": <goal>, "
-    "\"tasks\": [...]}; then advance steps as they complete. Skip only trivial one-shot actions "
+    "\"tasks\": [...]}; then move through them with {\"op\": \"next\"} as each completes. Skip only trivial one-shot actions "
     "that cannot be decomposed. Heavy execution tools are blocked until a real bar exists — "
     "a fabricated or tool-name-derived step list is forbidden."
 )

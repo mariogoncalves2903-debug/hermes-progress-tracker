@@ -160,6 +160,8 @@ def _tool_handler(args: Any = None, **kwargs: Any) -> str:
         payload.update(kwargs)
         doc = store.get_document()
         sid = _sid(kwargs)
+        if "op" not in payload:
+            return json.dumps({"error": "progress_tracker: missing required 'op' field (valid ops: title, tasks, next, active, add, skip, failed, fixed, found, dismiss)"})
         result_json, _payload = store.apply_op(doc, payload["op"], payload, session_id=sid)
         store.save_document(doc)
         return result_json

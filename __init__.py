@@ -73,14 +73,14 @@ ENFORCED_TOOLS = frozenset({
 _PROJECT_KEYWORDS = (
     "build", "create", "make", "implement", "harness", "integrate", "port",
     "refactor", "automate", "develop", "scaffold", "migrate", "plugin",
-    "desktop", "backend", "script", "project", "app", "api", "install",
-    "fix", "debug", "resolve", "deploy", "test", "configure", "setup",
+    "desktop", "backend", "script", "project", "app", "api", "deploy",
 )
 
 _PROJECT_PHRASES = (
-    "can you", "could you", "i need", "i want", "let's", "lets", "so it",
-    "so that", "and then", "in order to", "step 1", "first,", "then,",
-    "finally,", "background", "deliver", "run in the background",
+    "step 1", "step 2", "step 3", "first,", "then,", "finally,",
+    "and then", "in order to", "break down", "break it down",
+    "multi-step", "multi step", "phase 1", "phase 2",
+    "then ", "next,", "after that", "followed by",
 )
 
 _EXPLAIN_PREFIXES = (
@@ -88,7 +88,7 @@ _EXPLAIN_PREFIXES = (
     "how to", "teach me", "describe", "tutorial", "guide me", "learn about",
 )
 
-_MIN_PROJECT_CHARS = 100
+_MIN_PROJECT_CHARS = 200
 
 _BLOCK_MESSAGE = (
     "progress-tracker: this looks like multi-step work and no active progress bar exists. "
@@ -100,25 +100,22 @@ _BLOCK_MESSAGE = (
 def _looks_like_multistep(text: Any) -> bool:
     """Conservative project detector: request signals plus execution shape.
 
-    Two keyword hits lower the length bar; explanatory openers ("explain how to...")
-    are questions, not work orders, unless the message also starts with a build verb.
+    Requires clear multi-step language (phrases) AND multiple project keywords.
+    Explanatory openers ("explain how to...") are questions, not work orders.
     """
     if not isinstance(text, str):
         return False
     t = text.lower().strip()
-    if len(t) < 50:
+    if len(t) < _MIN_PROJECT_CHARS:
         return False
     keywords = sum(1 for k in _PROJECT_KEYWORDS if k in t)
     phrases = sum(1 for p in _PROJECT_PHRASES if p in t)
-    if keywords < 1:
+    if keywords < 2 or phrases < 1:
         return False
-    head = t[:60]
+    head = t[:80]
     if any(p in head for p in _EXPLAIN_PREFIXES):
         return False
-    min_len = 50 if keywords >= 2 else _MIN_PROJECT_CHARS
-    if len(t) < min_len:
-        return False
-    return phrases >= 1 or keywords >= 2 or t.count("?") >= 2
+    return True
 
 
 def _has_active_track(doc: Dict[str, Any], session_id: str) -> bool:

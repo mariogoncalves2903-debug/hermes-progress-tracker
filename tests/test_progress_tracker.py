@@ -372,8 +372,9 @@ class TestProgressTracker(_StoreCase):
 class TestMultistepEnforcement(_StoreCase):
     PROJECT_MSG = (
         "can you build a harness for Gemini Desktop so it can run in the background and "
-        "deliver an API? Let's say I have Gemini running in the background and I plug the "
-        "API into Nine Router, then take the reply and convert it into something usable."
+        "deliver an API? Step 1: set up the background runner. Step 2: plug the API into "
+        "Nine Router. Then take the reply and convert it into something usable. Finally, "
+        "test the full integration."
     )
 
     def _seed_project_intent(self, session_id: str = "s1") -> None:
@@ -402,9 +403,13 @@ class TestMultistepEnforcement(_StoreCase):
             "Can you explain how to build a React app? I need to understand the architecture "
             "for my thesis and learn about the best folder structure."
         ))
-        self.assertTrue(_looks_like_multistep(
+        # Simple single-task requests should NOT trigger enforcement
+        self.assertFalse(_looks_like_multistep(
             "can you create a script that reads a file and prints it?"
         ))
+        self.assertFalse(_looks_like_multistep("install obscura"))
+        self.assertFalse(_looks_like_multistep("set up obscura"))
+        self.assertFalse(_looks_like_multistep("give a detailed list of files"))
 
     def test_blocks_heavy_tool_until_bar_exists(self) -> None:
         self._seed_project_intent()

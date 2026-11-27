@@ -581,16 +581,8 @@ function TrackGroup({ track, isActive, isLast, blinkTick, log, handleOp }) {
   const [isExpanded, setExpanded] = useState(isActive || !!track.isExpanded)
   const opRef = useRef(handleOp)
   opRef.current = handleOp
-  // Upstream stampDone: once every task is completed and the group is collapsed, dismiss
-  // it after the linger. Expanded groups stay until the user presses ✕.
-  const complete = track.tasks.length > 0 && track.tasks.every(t => t.status === 'completed')
-  useEffect(() => {
-    if (!complete || isExpanded) return undefined
-    const lastClosed = Math.max(...track.tasks.map(t => t.closedAt || 0))
-    const wait = Math.max(0, DONE_LINGER_MS - (Date.now() - lastClosed))
-    const id = setTimeout(() => opRef.current('dismiss', { trackId: track.id }), wait)
-    return () => clearTimeout(id)
-  }, [complete, isExpanded, track])
+  // Manual dismiss only: completed tracks stay until the user presses ✕.
+  // (Auto-dismiss removed — user wants explicit control over which tracks close.)
   const rows = timelineRows(track)
   // The SVG string is built only from our own constants and numeric track fields — no
   // user/task text reaches it, so dangerouslySetInnerHTML is safe here.
@@ -1719,7 +1711,7 @@ export default {
                 timeoutMs: 5000,
               })
             }
-            // Track auto-dismisses after linger (handled by TrackGroup effect)
+            // Track stays until the user presses ✕
           } catch (e) {
             host.notify({ kind: 'error', message: `Demo failed: ${e.message}` })
           }

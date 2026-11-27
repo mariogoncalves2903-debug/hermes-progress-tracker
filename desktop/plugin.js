@@ -165,7 +165,6 @@ function ProgressPane({ ctx }) {
   const [sessionTitles, setSessionTitles] = useState({})
   const genRef = useRef(0)
   const refreshRef = useRef(null)
-  const dismissRollbackRef = useRef(null)
 
   // Polling
   useEffect(() => {
@@ -228,11 +227,13 @@ function ProgressPane({ ctx }) {
         body: { session, op, args },
         timeoutMs: 5000,
       }),
-    onSuccess: () => { dismissRollbackRef.current = null; refreshRef.current?.() },
-    onError: () => {
-      const id = dismissRollbackRef.current
-      dismissRollbackRef.current = null
-      if (id) setHiddenIds(ids => ids.filter(x => x !== id))
+    onSuccess: () => { refreshRef.current?.() },
+    // TanStack v5 passes the exact mutation variables: concurrent dismisses roll
+    // back only the one that failed, not whichever id a shared ref last held.
+    onError: (_err, vars) => {
+      if (vars?.op === 'dismiss' && vars.args?.trackId) {
+        setHiddenIds(ids => ids.filter(x => x !== vars.args.trackId))
+      }
     },
   })
 
@@ -262,9 +263,7 @@ function ProgressPane({ ctx }) {
 
   function handleOp(op, args) {
     if (op === 'dismiss' && args?.trackId) {
-      const id = args.trackId
-      dismissRollbackRef.current = id
-      setHiddenIds(ids => ids.includes(id) ? ids : [...ids, id])
+      setHiddenIds(ids => ids.includes(args.trackId) ? ids : [...ids, args.trackId])
     }
     opMut.mutate({ op, args })
   }

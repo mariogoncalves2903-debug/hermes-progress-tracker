@@ -6,6 +6,7 @@ import asyncio
 import json
 import unittest
 from typing import Any, Dict
+from unittest.mock import patch
 
 import progress_store as store
 from __init__ import (
@@ -599,6 +600,43 @@ class TestDesktopContract(_StoreCase):
         doc = self._doc()
         self.assertEqual(len(doc["tracks"]), 1, "tasks must replace, not insert")
         self.assertEqual([t["label"] for t in doc["tracks"][0]["tasks"]], ["c", "d"])
+
+    def test_completed_track_freezes_worked_clock(self) -> None:
+        """WORKED stops at doneAt instead of rising forever after 4/4."""
+        t = self._track("Done", ["A"])
+        t["createdAt"] = 1_000
+        t["doneAt"] = 11_000
+        t["activeTaskId"] = None
+        for task in t["tasks"]:
+            task["state"] = "completed"
+            task["closedAt"] = 11_000
+        blocks = [{"kind": "question", "at": 3_000, "answeredAt": 12_000}]
+        with patch.object(store, "_now_ms", return_value=999_000):
+            timing = store.track_timing(t, blocks)
+        self.assertEqual(timing["elapsedMs"], 10_000)
+        self.assertEqual(timing["waitMs"], 8_000)   # clamped to doneAt, not 12_000
+        self.assertEqual(timing["workMs"], 2_000)
+
+    def test_legacy_completed_track_uses_last_closed_at(self) -> None:
+        """Pre-upgrade bars with no track doneAt still freeze at the last task close."""
+        t = self._track("Legacy", ["A"])
+        t["createdAt"] = 1_000
+        t["statusKey"] = "completed"
+        del t["doneAt"]
+        t["activeTaskId"] = None
+        t["tasks"][0].update(state="completed", closedAt=7_000)
+        with patch.object(store, "_now_ms", return_value=999_000):
+            timing = store.track_timing(t, [])
+        self.assertEqual(timing["elapsedMs"], 6_000)
+        self.assertEqual(timing["workMs"], 6_000)
+
+    def test_active_track_keeps_counting(self) -> None:
+        """No doneAt -> clock still advances; only completed bars freeze."""
+        t = self._track("Live", ["A"])
+        t["createdAt"] = 1_000
+        with patch.object(store, "_now_ms", return_value=999_000):
+            timing = store.track_timing(t, [])
+        self.assertEqual(timing["elapsedMs"], 998_000)
 
     def test_title_with_create_payload_creates_bar(self) -> None:
         """title op with tasks create payload creates bar when no tracks."""

@@ -39,6 +39,7 @@ DEFAULTS = {
     "max_turns_retained": 250,
     "enabled_tools": [],
     "enabled_findings": ["found", "failed"],
+    "enforce": True,
 }
 
 _logger = logging.getLogger("progress-tracker.store")
@@ -972,7 +973,16 @@ def track_timing(track: Dict[str, Any], blocks: Optional[List[Dict[str, Any]]] =
     so the sums are derived from those blocks (an unresolved one keeps counting) rather than
     kept as a second clock that can drift.
     """
-    now = _now_ms()
+    # Completed bars freeze their clock at doneAt; otherwise WORKED keeps rising
+    # while the pane still shows the finished result.
+    # Older completed bars have statusKey but no doneAt; fall back to the last task's
+    # closedAt so an upgrade also freezes their clock instead of counting forever.
+    done_at = track.get("doneAt")
+    if not done_at and track.get("statusKey") == "completed":
+        closed = [t.get("closedAt") for t in track.get("tasks", []) if t.get("closedAt")]
+        if closed:
+            done_at = max(closed)
+    now = min(_now_ms(), done_at) if done_at else _now_ms()
     created = track.get("createdAt") or now
     elapsed = max(0, now - created)
     wait = 0
@@ -983,7 +993,7 @@ def track_timing(track: Dict[str, Any], blocks: Optional[List[Dict[str, Any]]] =
         # Only permission/question blocks are human-wait; TOOL rows are work, not wait.
         if b.get("kind") not in ("permission", "question"):
             continue
-        end = b.get("answeredAt") or b.get("resolvedAt") or now
+        end = min(b.get("answeredAt") or b.get("resolvedAt") or now, now)
         wait += max(0, end - start)
     active = track.get("activeTaskId")
     task_ms = 0

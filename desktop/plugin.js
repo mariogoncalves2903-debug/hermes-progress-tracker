@@ -160,10 +160,12 @@ function ProgressPane({ ctx }) {
   const [tab, setTab] = useState('progress') // 'progress' | 'log'
   const [openEntryId, setOpenEntryId] = useState(null)
   const [blinkTick, setBlinkTick] = useState(0)
+  const [hiddenIds, setHiddenIds] = useState([])
   const [titleText, setSessionTitle] = useState('')
   const [sessionTitles, setSessionTitles] = useState({})
   const genRef = useRef(0)
   const refreshRef = useRef(null)
+  const dismissRollbackRef = useRef(null)
 
   // Polling
   useEffect(() => {
@@ -226,7 +228,12 @@ function ProgressPane({ ctx }) {
         body: { session, op, args },
         timeoutMs: 5000,
       }),
-    onSuccess: () => { refreshRef.current?.() },
+    onSuccess: () => { dismissRollbackRef.current = null; refreshRef.current?.() },
+    onError: () => {
+      const id = dismissRollbackRef.current
+      dismissRollbackRef.current = null
+      if (id) setHiddenIds(ids => ids.filter(x => x !== id))
+    },
   })
 
   if (!session) {
@@ -245,13 +252,20 @@ function ProgressPane({ ctx }) {
     return jsx('div', { style: { padding: 12, fontSize: 13 }, children: 'Loading…' })
   }
 
-  const { tracks = [], turn, tokens = {}, log = { blocks: [], findings: [] }, timeline = [] } = snapshot
+  const { tracks: rawTracks = [], turn, tokens = {}, log = { blocks: [], findings: [] }, timeline = [] } = snapshot
+  // Optimistic dismiss: hide immediately on ✕, backend persists in parallel.
+  const tracks = rawTracks.filter(t => !hiddenIds.includes(t.id))
   // Counters and the bar describe this chat only; the pane body lists every session.
   const activeTrack = tracks.findLast(t => !t.isDismissed && t.tasks.length > 0 && (t.sessionId == null || t.sessionId === session))
   const { done, total } = activeTrack ? getTrackProgress(activeTrack) : { done: 0, total: 0 }
   const totalLogEntries = (log.blocks?.length ?? 0) + (log.findings?.length ?? 0)
 
   function handleOp(op, args) {
+    if (op === 'dismiss' && args?.trackId) {
+      const id = args.trackId
+      dismissRollbackRef.current = id
+      setHiddenIds(ids => ids.includes(id) ? ids : [...ids, id])
+    }
     opMut.mutate({ op, args })
   }
 
@@ -1323,6 +1337,7 @@ function ProgressBand({ ctx }) {
   )
   const [snap, setSnap] = useState(null)
   const [expandedIds, setExpandedIds] = useState(new Set())
+  const [hiddenIds, setHiddenIds] = useState([])
 
   useEffect(() => {
     if (!session) { setSnap(null); return }
@@ -1344,7 +1359,7 @@ function ProgressBand({ ctx }) {
   const tracks = snap?.tracks ?? []
   // Filter: non-dismissed, has tasks, session-scoped (defense-in-depth; API may return all tracks pre-patch)
   const sessionMatch = (t) => t.sessionId === session
-  const eligibleTracks = tracks.filter(t => !t.isDismissed && t.tasks?.length > 0 && sessionMatch(t))
+  const eligibleTracks = tracks.filter(t => !t.isDismissed && !hiddenIds.includes(t.id) && t.tasks?.length > 0 && sessionMatch(t))
   // Active track is the last one
   const activeTrack = eligibleTracks[eligibleTracks.length - 1]
   // Other tracks (all but the last)
@@ -1367,11 +1382,13 @@ function ProgressBand({ ctx }) {
 
   // Dismiss uses the exact ctx.rest shape from handleOp/opMut (line 126-132)
   const dismissTrack = (track) => {
+    const id = track.id
+    setHiddenIds(ids => ids.includes(id) ? ids : [...ids, id])
     ctx.rest('/op', {
       method: 'POST',
-      body: { session, op: 'dismiss', args: { trackId: track.id } },
+      body: { session, op: 'dismiss', args: { trackId: id } },
       timeoutMs: 5000,
-    })
+    }).catch(() => setHiddenIds(ids => ids.filter(x => x !== id)))
   }
 
   return jsxs('div', {

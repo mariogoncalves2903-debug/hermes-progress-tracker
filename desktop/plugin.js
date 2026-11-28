@@ -148,6 +148,10 @@ function hash(n) {
   return s - Math.floor(s)
 }
 
+function hiddenTaskKey(trackId, taskId) {
+  return `${trackId}::${taskId}`
+}
+
 // ─── Main Pane Component ───
 function ProgressPane({ ctx }) {
   const focusedSession = useValue(host.state.focusedStoredSessionId)
@@ -161,6 +165,7 @@ function ProgressPane({ ctx }) {
   const [openEntryId, setOpenEntryId] = useState(null)
   const [blinkTick, setBlinkTick] = useState(0)
   const [hiddenIds, setHiddenIds] = useState([])
+  const [hiddenTaskKeys, setHiddenTaskKeys] = useState([])
   const [titleText, setSessionTitle] = useState('')
   const [sessionTitles, setSessionTitles] = useState({})
   const genRef = useRef(0)
@@ -234,6 +239,10 @@ function ProgressPane({ ctx }) {
       if (vars?.op === 'dismiss' && vars.args?.trackId) {
         setHiddenIds(ids => ids.filter(x => x !== vars.args.trackId))
       }
+      if (vars?.op === 'remove_task' && vars.args?.trackId && vars.args?.taskId) {
+        const key = hiddenTaskKey(vars.args.trackId, vars.args.taskId)
+        setHiddenTaskKeys(keys => keys.filter(x => x !== key))
+      }
     },
   })
 
@@ -254,8 +263,10 @@ function ProgressPane({ ctx }) {
   }
 
   const { tracks: rawTracks = [], turn, tokens = {}, log = { blocks: [], findings: [] }, timeline = [] } = snapshot
-  // Optimistic dismiss: hide immediately on ✕, backend persists in parallel.
-  const tracks = rawTracks.filter(t => !hiddenIds.includes(t.id))
+  // Optimistic dismiss: hide the clicked track or task immediately, backend persists in parallel.
+  const tracks = rawTracks
+    .filter(t => !hiddenIds.includes(t.id))
+    .map(t => ({ ...t, tasks: (t.tasks || []).filter(task => !hiddenTaskKeys.includes(hiddenTaskKey(t.id, task.id))) }))
   // Counters and the bar describe this chat only; the pane body lists every session.
   const activeTrack = tracks.findLast(t => !t.isDismissed && t.tasks.length > 0 && (t.sessionId == null || t.sessionId === session))
   const { done, total } = activeTrack ? getTrackProgress(activeTrack) : { done: 0, total: 0 }
@@ -264,6 +275,10 @@ function ProgressPane({ ctx }) {
   function handleOp(op, args) {
     if (op === 'dismiss' && args?.trackId) {
       setHiddenIds(ids => ids.includes(args.trackId) ? ids : [...ids, args.trackId])
+    }
+    if (op === 'remove_task' && args?.trackId && args?.taskId) {
+      const key = hiddenTaskKey(args.trackId, args.taskId)
+      setHiddenTaskKeys(keys => keys.includes(key) ? keys : [...keys, key])
     }
     opMut.mutate({ op, args })
   }
@@ -639,6 +654,7 @@ function TrackGroup({ track, isActive, isLast, blinkTick, log, handleOp }) {
               blinkTick,
               log,
               gutter: gutterFor(row, i),
+              onRemoveTask: (taskId) => handleOp('remove_task', { trackId: track.id, taskId }),
               key: row.key,
             })).concat([
           // Measured totals for the whole list — upstream totalsOf, the breakdown's last line.
@@ -657,7 +673,7 @@ function TrackGroup({ track, isActive, isLast, blinkTick, log, handleOp }) {
   })
 }
 
-function TaskRow({ task, track, isActiveTask, blinkTick, log, gutter }) {
+function TaskRow({ task, track, isActiveTask, blinkTick, log, gutter, onRemoveTask }) {
   const state = getTaskState(task, track)
   const isBlinking = isActiveTask && state === 'active' && (blinkTick % 2 === 0)
 
@@ -734,6 +750,16 @@ function TaskRow({ task, track, isActiveTask, blinkTick, log, gutter }) {
       // Attempt pills (f0/f1/f2 cyan for unfinished, red failure count when failures > unfinished)
       (task.attempts > 0 || task.failures > 0) && jsx(AttemptPills, { task }),
       right,
+      onRemoveTask && jsx('button', {
+        type: 'button',
+        title: `Remove task: ${task.subject || task.label || ''}`,
+        onClick: (e) => { e.stopPropagation(); onRemoveTask(task.id) },
+        style: {
+          border: 'none', background: 'transparent', cursor: 'pointer', padding: '0 2px',
+          fontSize: 12, color: 'var(--ui-text-tertiary)', flex: '0 0 auto',
+        },
+        children: '✕',
+      }),
     ]
   })
 }
@@ -1329,6 +1355,7 @@ function ProgressBand({ ctx }) {
   const [snap, setSnap] = useState(null)
   const [expandedIds, setExpandedIds] = useState(new Set())
   const [hiddenIds, setHiddenIds] = useState([])
+  const [hiddenTaskKeys, setHiddenTaskKeys] = useState([])
 
   useEffect(() => {
     if (!session) { setSnap(null); return }
@@ -1347,7 +1374,10 @@ function ProgressBand({ ctx }) {
     return () => { alive = false; clearInterval(id) }
   }, [ctx, session])
 
-  const tracks = snap?.tracks ?? []
+  const tracks = (snap?.tracks ?? []).map(t => ({
+    ...t,
+    tasks: (t.tasks ?? []).filter(task => !hiddenTaskKeys.includes(hiddenTaskKey(t.id, task.id)))
+  }))
   // Filter: non-dismissed, has tasks, session-scoped (defense-in-depth; API may return all tracks pre-patch)
   const sessionMatch = (t) => t.sessionId === session
   const eligibleTracks = tracks.filter(t => !t.isDismissed && !hiddenIds.includes(t.id) && t.tasks?.length > 0 && sessionMatch(t))
@@ -1380,6 +1410,16 @@ function ProgressBand({ ctx }) {
       body: { session, op: 'dismiss', args: { trackId: id } },
       timeoutMs: 5000,
     }).catch(() => setHiddenIds(ids => ids.filter(x => x !== id)))
+  }
+
+  const removeTask = (track, task) => {
+    const key = hiddenTaskKey(track.id, task.id)
+    setHiddenTaskKeys(keys => keys.includes(key) ? keys : [...keys, key])
+    ctx.rest('/op', {
+      method: 'POST',
+      body: { session, op: 'remove_task', args: { trackId: track.id, taskId: task.id } },
+      timeoutMs: 5000,
+    }).catch(() => setHiddenTaskKeys(keys => keys.filter(x => x !== key)))
   }
 
   return jsxs('div', {
@@ -1565,6 +1605,16 @@ function ProgressBand({ ctx }) {
                     jsx('span', {
                       style: { fontSize: 10, color: 'var(--ui-text-tertiary)', fontFamily: 'var(--font-mono, ui-monospace)' },
                       children: row.startedAt ? new Date(row.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'
+                    }),
+                    row.task && jsx('button', {
+                      type: 'button',
+                      title: `Remove task: ${row.subject}`,
+                      onClick: (e) => { e.stopPropagation(); removeTask(track, row.task) },
+                      style: {
+                        border: 'none', background: 'transparent', cursor: 'pointer', padding: '0 2px',
+                        fontSize: 12, color: 'var(--ui-text-tertiary)', flex: '0 0 auto',
+                      },
+                      children: '✕',
                     }),
                   ]
                 })

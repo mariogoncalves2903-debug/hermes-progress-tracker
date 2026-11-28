@@ -26,8 +26,8 @@ TOOL_SCHEMA = {
     "properties": {
         "op": {
             "type": "string",
-            "enum": ["title", "tasks", "next", "active", "add", "skip", "failed", "fixed", "found", "dismiss"],
-            "description": "Operation: title, tasks, next, active, add, skip, failed, fixed, found, or dismiss"
+            "enum": ["title", "tasks", "next", "active", "add", "skip", "failed", "fixed", "found", "remove_task", "dismiss"],
+            "description": "Operation: title, tasks, next, active, add, skip, failed, fixed, found, remove_task, or dismiss"
         },
         "title": {"type": "string", "description": "New title for the bar (op=title)"},
         "tasks": {
@@ -44,6 +44,8 @@ TOOL_SCHEMA = {
         "kind": {"type": "string", "description": "Finding kind (op=found)"},
         "found": {"type": "string", "description": "Finding text (op=found)"},
         "text": {"type": "string", "description": "Alias for found (desktop op=found arg shape)"},
+        "trackId": {"type": "string", "description": "Track id (op=remove_task / dismiss)"},
+        "taskId": {"type": "string", "description": "Task id within the track (op=remove_task)"},
     },
     "required": ["op"],
     "additionalProperties": False,
@@ -158,7 +160,7 @@ def _tool_handler(args: Any = None, **kwargs: Any) -> str:
         doc = store.get_document()
         sid = _sid(kwargs)
         if "op" not in payload:
-            return json.dumps({"error": "progress_tracker: missing required 'op' field (valid ops: title, tasks, next, active, add, skip, failed, fixed, found, dismiss)"})
+            return json.dumps({"error": "progress_tracker: missing required 'op' field (valid ops: title, tasks, next, active, add, skip, failed, fixed, found, remove_task, dismiss)"})
         result_json, _payload = store.apply_op(doc, payload["op"], payload, session_id=sid)
         store.save_document(doc)
         return result_json

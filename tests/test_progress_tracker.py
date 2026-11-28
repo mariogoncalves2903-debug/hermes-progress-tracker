@@ -201,8 +201,50 @@ class TestProgressTracker(_StoreCase):
         res, _ = store.apply_op(self._doc(), "advance", {})
         err = json.loads(res)["error"]
         self.assertIn('unknown op "advance"', err)
-        for op in ("title", "tasks", "next", "active", "add", "skip", "failed", "fixed", "found", "dismiss"):
+        for op in ("title", "tasks", "next", "active", "add", "skip", "failed", "fixed", "found", "remove_task", "dismiss"):
             self.assertIn(op, err)
+
+    def test_remove_task_affects_only_clicked_task_in_clicked_track(self) -> None:
+        """X on step2 of one bar removes step2 there, never another bar's task."""
+        a = store.new_track("A", ["a1", "a2", "a3"], session_id="s1")
+        b = store.new_track("B", ["b1", "b2"], session_id="s1")
+        doc = self._doc()
+        doc["tracks"] = [a, b]
+        self._save(doc)
+
+        res, payload = store.apply_op(
+            doc, "remove_task", {"trackId": a["id"], "taskId": "step2"}, session_id="s1"
+        )
+        self.assertNotIn("error", json.loads(res))
+        self.assertEqual([t["label"] for t in a["tasks"]], ["a1", "a3"])
+        self.assertEqual([t["label"] for t in b["tasks"]], ["b1", "b2"])
+        self.assertEqual(a["activeTaskId"], "step1")
+        self.assertFalse(a.get("isDismissed", False))
+        self.assertEqual(len(payload["track"]["tasks"]), 2)
+        saved = self._doc()
+        self.assertEqual(len(saved["tracks"][0]["tasks"]), 2)
+
+        # Removing the active task promotes the next remaining task, not another bar's.
+        res, _ = store.apply_op(
+            doc, "remove_task", {"trackId": b["id"], "taskId": "step1"}, session_id="s1"
+        )
+        self.assertNotIn("error", json.loads(res))
+        self.assertEqual([t["label"] for t in b["tasks"]], ["b2"])
+        self.assertEqual(b["activeTaskId"], "step2")
+        self.assertEqual([t["label"] for t in a["tasks"]], ["a1", "a3"])
+
+    def test_remove_task_rejects_missing_or_wrong_id_without_deleting(self) -> None:
+        t = store.new_track("T", ["A", "B"], session_id="s1")
+        doc = self._doc()
+        doc["tracks"] = [t]
+        self._save(doc)
+        for args in (
+            {"trackId": "nope", "taskId": "step1"},
+            {"trackId": t["id"], "taskId": "nope"},
+        ):
+            res, _ = store.apply_op(doc, "remove_task", args, session_id="s1")
+            self.assertIn("error", json.loads(res))
+            self.assertEqual([x["label"] for x in t["tasks"]], ["A", "B"])
 
     def test_prompt_and_schema_name_next_and_dismiss(self) -> None:
         """The standing rule says op=next explicitly; schema accepts every documented op."""

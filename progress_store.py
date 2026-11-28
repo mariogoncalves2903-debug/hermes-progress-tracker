@@ -485,6 +485,47 @@ def apply_op(doc: Dict[str, Any], op: str, args: Dict[str, Any],
             track = new_track_obj
             now = _now_ms()
             return json.dumps({"result": result_line(track)}), {"track": _track_snapshot(track)}
+    if op == "remove_task":
+        # X on one task row removes only that task from its own track. Never fall back
+        # to "newest track": a missing/ambiguous id must not delete the wrong work.
+        target = next((t for t in tracks if t.get("id") == a.get("trackId")), None)
+        if target is None:
+            return json.dumps({"error": "progress_tracker: remove_task needs a valid trackId"}), {}
+        task_id = str(a.get("taskId") or "")
+        idx = next((i for i, t in enumerate(target["tasks"]) if str(t.get("id")) == task_id), -1)
+        if idx < 0:
+            ids = ", ".join(str(t.get("id")) for t in target["tasks"])
+            return json.dumps({"error": f'progress_tracker: no task with id "{task_id}" in this track; ids are {ids}.'}), {}
+        removed = target["tasks"].pop(idx)
+        was_active = target.get("activeTaskId") == removed["id"]
+        target["updatedAt"] = _now_ms()
+        target["callsSinceMove"] = 0
+        _prune_next_ids(target)
+        if was_active:
+            # Prefer the next task this one pointed at, then the first still-pending task.
+            candidates = [
+                t for t in target["tasks"]
+                if t["state"] == "pending" and str(t.get("id")) in [str(x) for x in removed.get("nextTaskIds") or []]
+            ] or [t for t in target["tasks"] if t["state"] == "pending"]
+            if candidates:
+                nxt = candidates[0]
+                nxt["state"] = "in_progress"
+                nxt["openedAt"] = _now_ms()
+                target["activeTaskId"] = nxt["id"]
+            else:
+                target["activeTaskId"] = None
+        elif not any(t.get("state") == "in_progress" for t in target["tasks"]):
+            target["activeTaskId"] = None
+        if target["tasks"] and all(t.get("state") == "completed" for t in target["tasks"]) and target.get("statusKey") != "completed":
+            target["statusKey"] = "completed"
+            target["doneAt"] = _now_ms()
+        if not target["tasks"]:
+            target["isDismissed"] = True
+        save_document(doc)
+        return json.dumps({"result": f"removed task \"{removed.get('label') or removed.get('id')}\" from {target.get('title') or target.get('id')}"}), {
+            "track": _track_snapshot(target)
+        }
+
     if not track:
         return json.dumps({"error": "progress_tracker: no bar yet; create one with title and tasks."}), {}
     now = _now_ms()
@@ -764,7 +805,7 @@ def apply_op(doc: Dict[str, Any], op: str, args: Dict[str, Any],
         _cap_findings(doc)
         return json.dumps({"result": "noted"}), {"track": _track_snapshot(track)}
 
-    valid_ops = "title, tasks, next, active, add, skip, failed, fixed, found, dismiss"
+    valid_ops = "title, tasks, next, active, add, skip, failed, fixed, found, remove_task, dismiss"
     return json.dumps({"error": f'progress_tracker: unknown op "{op}" (valid ops: {valid_ops})'}), {}
 
 

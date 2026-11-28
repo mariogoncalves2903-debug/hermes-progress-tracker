@@ -98,6 +98,7 @@ The agent drives the bar through `progress_tracker`:
 | `failed` | `reason` | Mark the active step failed with this reason. |
 | `fixed` | - | Clear the failure state. |
 | `found` | `text` | Log a finding to the Progress pane. Works without a bar. |
+| `remove_task` | `trackId`, `taskId` | Remove one task from one bar. The desktop ✕ on a task row uses this. |
 | `dismiss` | - | Dismiss the bar. |
 
 Use goal-level steps from the user's request, never raw tool names. If the agent names a task that does not exist, the tool refuses the call and lists the task names.

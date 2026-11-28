@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import itertools
+import hashlib
 import json
 import logging
 import re
 import threading
 import time
+import uuid
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -106,7 +107,33 @@ def get_document(facade: Optional[Any] = None) -> Dict[str, Any]:
     doc.setdefault("log", {"blocks": [], "findings": []})
     doc.setdefault("turns", [])
     doc.setdefault("sessions", {})
+    _repair_track_ids(doc)
     return doc
+
+
+def _repair_track_ids(doc: Dict[str, Any]) -> None:
+    """Give every track a unique id so one desktop X hides one bar, not all.
+
+    `_TRACK_SEQ` reset on every gateway restart; old docs have five `track1` bars.
+    The desktop filters by `t.id`, so one X removed every duplicate. Re-key only
+    collisions, deterministically, from immutable fields so reloads stay stable.
+    """
+    used = set()
+    for i, track in enumerate(doc.get("tracks", [])):
+        tid = track.get("id")
+        if tid and tid not in used:
+            used.add(tid)
+            continue
+        seed = "|".join(str(track.get(k) or "") for k in ("sessionId", "createdAt", "title"))
+        digest = hashlib.sha1(f"{seed}|{i}".encode()).hexdigest()[:12]
+        new_id = f"track-{digest}"
+        suffix = 1
+        while new_id in used:
+            suffix += 1
+            new_id = f"track-{digest}-{suffix}"
+        track["id"] = new_id
+        used.add(new_id)
+
 
 
 def save_document(doc: Dict[str, Any], facade: Optional[Any] = None) -> None:
@@ -136,7 +163,8 @@ def _now_ms() -> int:
 
 # ─── Track & Task construction ───
 
-_TRACK_SEQ = itertools.count(1)
+# Track ids are UUIDs; a module counter reset on restart and produced
+# duplicate ids across sessions, so one desktop X hid every matching bar.
 
 
 def new_track(title: str, subjects: List[str], track_id: Optional[str] = None,
@@ -170,7 +198,7 @@ def new_track(title: str, subjects: List[str], track_id: Optional[str] = None,
     track = {
         # Unique per track: the pane's ✕ and the band's ✕ dismiss by this id, and the desktop
         # keys row effects on it. A constant here silently dismissed the wrong row.
-        "id": track_id or f"track{next(_TRACK_SEQ)}",
+        "id": track_id or f"track-{uuid.uuid4().hex[:16]}",
         "sessionId": session_id,
         "title": title,
         "caption": "",

@@ -814,6 +814,41 @@ class TestDesktopContract(_StoreCase):
         self.assertIsNone(_truncate_failed_output(123))
 
 
+class TestUniqueTrackIds(_StoreCase):
+    def test_new_tracks_get_distinct_uuid_ids(self) -> None:
+        ids = [store.new_track(f"T{i}", ["a"])["id"] for i in range(20)]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(i.startswith("track-") for i in ids))
+
+    def test_duplicate_ids_repaired_deterministically(self) -> None:
+        doc = self._doc()
+        a = store.new_track("A", ["a"], session_id="s1")
+        b = store.new_track("B", ["b"], session_id="s2")
+        c = store.new_track("C", ["c"], session_id="s3")
+        for t in (a, b, c):
+            t["id"] = "track1"
+        doc["tracks"] = [a, b, c]
+        self._save(doc)
+        first = store.get_document(self.facade)["tracks"]
+        ids1 = [t["id"] for t in first]
+        self.assertEqual(len(ids1), len(set(ids1)))
+        second = store.get_document(self.facade)["tracks"]
+        self.assertEqual(ids1, [t["id"] for t in second])
+
+    def test_remove_task_targets_only_one_of_former_duplicates(self) -> None:
+        doc = self._doc()
+        a = store.new_track("A", ["a"], session_id="s1")
+        b = store.new_track("B", ["b"], session_id="s2")
+        a["id"] = b["id"] = "track1"
+        doc["tracks"] = [a, b]
+        self._save(doc)
+        doc = store.get_document(self.facade)
+        ids = [t["id"] for t in doc["tracks"]]
+        store.apply_op(doc, "remove_task", {"trackId": ids[1], "taskId": "step1"}, session_id="s2")
+        self.assertEqual(len(doc["tracks"][0]["tasks"]), 1)
+        self.assertEqual(len(doc["tracks"][1]["tasks"]), 0)
+
+
 class TestSlashCommand(_StoreCase):
     def test_no_bar(self) -> None:
         res = _cmd_progress("")
